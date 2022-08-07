@@ -153,7 +153,7 @@ def main(commands: argparse.Namespace):
         auth_token = None
     run_on_cuda: bool = commands.device.startswith("cuda")
     Path(commands.output).mkdir(parents=True, exist_ok=True)
-    onnx_model_path = os.path.join(commands.output, "model-original.onnx")
+    onnx_model_path = os.path.join(commands.output, "model-folded.onnx")
     onnx_optim_model_path = os.path.join(commands.output, "model.onnx")
     tensorrt_path = os.path.join(commands.output, "model.plan")
     if run_on_cuda:
@@ -183,23 +183,13 @@ def main(commands: argparse.Namespace):
         model_pytorch.cuda()
 
     tensor_shapes = list(zip(commands.batch_size, commands.seq_len))
-    # take optimial size
+    # take optimal size
     inputs_pytorch = generate_multiple_inputs(
         batch_size=tensor_shapes[1][0],
         seq_len=tensor_shapes[1][1],
         input_names=input_names,
         device=commands.device,
         nb_inputs_to_gen=commands.warmup,
-    )
-
-    # create onnx model and compare results
-    convert_to_onnx(
-        model_pytorch=model_pytorch,
-        output_path=onnx_model_path,
-        inputs_pytorch=inputs_pytorch[0],
-        quantization=commands.quantization,
-        var_output_seq=commands.task in ["text-generation", "token-classification", "question-answering"],
-        output_names=["output"] if commands.task != "question-answering" else ["start_logits", "end_logits"],
     )
 
     timings = {}
