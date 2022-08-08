@@ -179,8 +179,6 @@ def main(commands: argparse.Namespace):
     logging.info(f"axis: {input_names}")
 
     model_pytorch.eval()
-    if run_on_cuda:
-        model_pytorch.cuda()
 
     tensor_shapes = list(zip(commands.batch_size, commands.seq_len))
     # take optimial size
@@ -204,17 +202,17 @@ def main(commands: argparse.Namespace):
 
     timings = {}
 
-    def get_pytorch_infer(model: PreTrainedModel, cuda: bool, task: str):
+    def get_pytorch_infer(model: PreTrainedModel, task: str):
         if task in ["classification", "text-generation", "token-classification", "question-answering"]:
-            return infer_classification_pytorch(model=model, run_on_cuda=cuda)
+            return infer_classification_pytorch(model=model)
         if task == "embedding":
-            return infer_feature_extraction_pytorch(model=model, run_on_cuda=cuda)
+            return infer_feature_extraction_pytorch(model=model)
         raise Exception(f"unknown task: {task}")
 
     with torch.inference_mode():
         logging.info("running Pytorch (FP32) benchmark")
         pytorch_output, time_buffer = launch_inference(
-            infer=get_pytorch_infer(model=model_pytorch, cuda=run_on_cuda, task=commands.task),
+            infer=get_pytorch_infer(model=model_pytorch, task=commands.task),
             inputs=inputs_pytorch,
             nb_measures=commands.nb_measures,
         )
@@ -238,42 +236,6 @@ def main(commands: argparse.Namespace):
             working_directory=commands.output,
             device=commands.device,
         )
-        timings["Pytorch (FP32)"] = time_buffer
-        if run_on_cuda and not commands.fast:
-            from torch.cuda.amp import autocast
-
-            with autocast():
-                engine_name = "Pytorch (FP16)"
-                logging.info("running Pytorch (FP16) benchmark")
-                pytorch_fp16_output, time_buffer = launch_inference(
-                    infer=get_pytorch_infer(model=model_pytorch, cuda=run_on_cuda, task=commands.task),
-                    inputs=inputs_pytorch,
-                    nb_measures=commands.nb_measures,
-                )
-                check_accuracy(
-                    engine_name=engine_name,
-                    pytorch_output=pytorch_output,
-                    engine_output=pytorch_fp16_output,
-                    tolerance=commands.atol,
-                )
-                timings[engine_name] = time_buffer
-        elif commands.device == "cpu":
-            logging.info("preparing Pytorch (INT-8) benchmark")
-            model_pytorch = torch.quantization.quantize_dynamic(model_pytorch, {torch.nn.Linear}, dtype=torch.qint8)
-            engine_name = "Pytorch (INT-8)"
-            logging.info("running Pytorch (FP32) benchmark")
-            pytorch_int8_output, time_buffer = launch_inference(
-                infer=get_pytorch_infer(model=model_pytorch, cuda=run_on_cuda, task=commands.task),
-                inputs=inputs_pytorch,
-                nb_measures=commands.nb_measures,
-            )
-            check_accuracy(
-                engine_name=engine_name,
-                pytorch_output=pytorch_output,
-                engine_output=pytorch_int8_output,
-                tolerance=commands.atol,
-            )
-            timings[engine_name] = time_buffer
     model_pytorch.cpu()
 
     logging.info("cleaning up")

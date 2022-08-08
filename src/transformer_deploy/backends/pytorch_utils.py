@@ -26,12 +26,11 @@ from transformer_deploy.backends.onnx_utils import save_onnx
 
 
 def infer_classification_pytorch(
-    model: PreTrainedModel, run_on_cuda: bool
+    model: PreTrainedModel
 ) -> Callable[[Dict[str, torch.Tensor]], torch.Tensor]:
     """
     Perform Pytorch inference for classification task
     :param model: Pytorch model (transformers)
-    :param run_on_cuda: True if should be ran on GPU
     :return: a function to perform inference
     """
 
@@ -43,15 +42,13 @@ def infer_classification_pytorch(
             start_logits = model_output.start_logits.detach()
             end_logits = model_output.end_logits.detach()
             model_output = (start_logits, end_logits)
-        if run_on_cuda:
-            torch.cuda.synchronize()
         return model_output
 
     return infer
 
 
 def infer_feature_extraction_pytorch(
-    model: PreTrainedModel, run_on_cuda: bool
+    model: PreTrainedModel
 ) -> Callable[[Dict[str, torch.Tensor]], torch.Tensor]:
     """
     Perform Pytorch inference for feature extraction task
@@ -62,8 +59,6 @@ def infer_feature_extraction_pytorch(
 
     def infer(inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
         model_output = model(**inputs).detach()  # noqa: F821
-        if run_on_cuda:
-            torch.cuda.synchronize()
         return model_output
 
     return infer
