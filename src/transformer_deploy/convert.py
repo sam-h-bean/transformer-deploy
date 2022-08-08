@@ -153,7 +153,7 @@ def main(commands: argparse.Namespace):
         auth_token = None
     run_on_cuda: bool = commands.device.startswith("cuda")
     Path(commands.output).mkdir(parents=True, exist_ok=True)
-    onnx_model_path = os.path.join(commands.output, "model-folded.onnx")
+    onnx_model_path = os.path.join(commands.output, "model-original.onnx")
     onnx_optim_model_path = os.path.join(commands.output, "model.onnx")
     tensorrt_path = os.path.join(commands.output, "model.plan")
     if run_on_cuda:
@@ -183,13 +183,23 @@ def main(commands: argparse.Namespace):
         model_pytorch.cuda()
 
     tensor_shapes = list(zip(commands.batch_size, commands.seq_len))
-    # take optimal size
+    # take optimial size
     inputs_pytorch = generate_multiple_inputs(
         batch_size=tensor_shapes[1][0],
         seq_len=tensor_shapes[1][1],
         input_names=input_names,
         device=commands.device,
         nb_inputs_to_gen=commands.warmup,
+    )
+
+    # create onnx model and compare results
+    convert_to_onnx(
+        model_pytorch=model_pytorch,
+        output_path=onnx_model_path,
+        inputs_pytorch=inputs_pytorch[0],
+        quantization=commands.quantization,
+        var_output_seq=commands.task in ["text-generation", "token-classification", "question-answering"],
+        output_names=["output"] if commands.task != "question-answering" else ["start_logits", "end_logits"],
     )
 
     timings = {}
@@ -228,6 +238,45 @@ def main(commands: argparse.Namespace):
             working_directory=commands.output,
             device=commands.device,
         )
+        timings["Pytorch (FP32)"] = time_buffer
+        if run_on_cuda and not commands.fast:
+            from torch.cuda.amp import autocast
+
+            with autocast():
+                engine_name = "Pytorch (FP16)"
+                logging.info("running Pytorch (FP16) benchmark")
+                pytorch_fp16_output, time_buffer = launch_inference(
+                    infer=get_pytorch_infer(model=model_pytorch, cuda=run_on_cuda, task=commands.task),
+                    inputs=inputs_pytorch,
+                    nb_measures=commands.nb_measures,
+                )
+                check_accuracy(
+                    engine_name=engine_name,
+                    pytorch_output=pytorch_output,
+                    engine_output=pytorch_fp16_output,
+                    tolerance=commands.atol,
+                )
+                timings[engine_name] = time_buffer
+        elif commands.device == "cpu":
+            logging.info("preparing Pytorch (INT-8) benchmark")
+            model_pytorch = torch.quantization.quantize_dynamic(model_pytorch, {torch.nn.Linear}, dtype=torch.qint8)
+            engine_name = "Pytorch (INT-8)"
+            logging.info("running Pytorch (FP32) benchmark")
+            pytorch_int8_output, time_buffer = launch_inference(
+                infer=get_pytorch_infer(model=model_pytorch, cuda=run_on_cuda, task=commands.task),
+                inputs=inputs_pytorch,
+                nb_measures=commands.nb_measures,
+            )
+            check_accuracy(
+                engine_name=engine_name,
+                pytorch_output=pytorch_output,
+                engine_output=pytorch_int8_output,
+                tolerance=commands.atol,
+            )
+            timings[engine_name] = time_buffer
+    model_pytorch.cpu()
+
+    logging.info("cleaning up")
     if run_on_cuda:
         torch.cuda.empty_cache()
     gc.collect()
