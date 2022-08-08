@@ -179,6 +179,7 @@ def main(commands: argparse.Namespace):
     logging.info(f"axis: {input_names}")
 
     model_pytorch.eval()
+    model_pytorch.cpu()
 
     tensor_shapes = list(zip(commands.batch_size, commands.seq_len))
     # take optimial size
@@ -236,7 +237,6 @@ def main(commands: argparse.Namespace):
             working_directory=commands.output,
             device=commands.device,
         )
-    model_pytorch.cpu()
 
     logging.info("cleaning up")
     gc.collect()
