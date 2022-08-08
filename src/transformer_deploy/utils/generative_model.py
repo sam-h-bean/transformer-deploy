@@ -116,7 +116,9 @@ class TritonPythonModel:
             input_ids = tokens.input_ids.type(dtype=torch.int32)
             if self.device == "cuda":
                 input_ids = input_ids.to("cuda")
-            output_seq: torch.Tensor = self.model.generate(input_ids, max_length=32, top_p=0.95, top_k=500, do_sample=True)
+            output_seq: torch.Tensor = self.model.generate(
+                input_ids, max_new_tokens=64, top_p=0.95, top_k=500, do_sample=True
+            )
             decoded_texts: List[str] = [self.tokenizer.decode(seq, skip_special_tokens=True) for seq in output_seq]
             tensor_output = [pb_utils.Tensor("output", np.array(t, dtype=object)) for t in decoded_texts]
             responses.append(pb_utils.InferenceResponse(tensor_output))
