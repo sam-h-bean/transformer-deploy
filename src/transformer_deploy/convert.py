@@ -186,7 +186,7 @@ def main(commands: argparse.Namespace):
         batch_size=tensor_shapes[1][0],
         seq_len=tensor_shapes[1][1],
         input_names=input_names,
-        device=commands.device,
+        device="cpu",
         nb_inputs_to_gen=commands.warmup,
     )
 
@@ -239,8 +239,6 @@ def main(commands: argparse.Namespace):
     model_pytorch.cpu()
 
     logging.info("cleaning up")
-    if run_on_cuda:
-        torch.cuda.empty_cache()
     gc.collect()
 
     if "tensorrt" in commands.backend:
